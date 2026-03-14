@@ -613,10 +613,29 @@ export class AttacksDisplay extends LitElement implements Layer {
             ?disabled=${attack.retreating}
             title="Cancel attack"
           >
-            <span
-              class="inline-block h-4 w-4 lg:h-5 lg:w-5"
-              style="background: ${markerColor}; -webkit-mask: url('${soldierIcon}') center/contain no-repeat; mask: url('${soldierIcon}') center/contain no-repeat; filter: drop-shadow(-0.6px -0.6px 0 rgba(0,0,0,0.85)) drop-shadow(0.6px -0.6px 0 rgba(0,0,0,0.85)) drop-shadow(-0.6px 0.6px 0 rgba(0,0,0,0.85)) drop-shadow(0.6px 0.6px 0 rgba(0,0,0,0.85));"
-            ></span>
+            <svg
+              viewBox="0 0 24 24"
+              class="h-4 w-4 lg:h-5 lg:w-5"
+              style="overflow: visible;"
+              aria-hidden="true"
+            >
+              <circle
+                cx="12"
+                cy="7"
+                r="3.8"
+                fill="${markerColor}"
+                stroke="rgba(0,0,0,0.9)"
+                stroke-width="1.4"
+              ></circle>
+              <path
+                d="M4.2 21c0-4.1 3.5-6.9 7.8-6.9s7.8 2.8 7.8 6.9"
+                fill="${markerColor}"
+                stroke="rgba(0,0,0,0.9)"
+                stroke-width="1.4"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
             <span
               class="text-[11px] lg:text-[12px] font-black leading-none"
               style="color: #ef4444; text-shadow: -0.6px -0.6px 0 rgba(0,0,0,0.9), 0.6px -0.6px 0 rgba(0,0,0,0.9), -0.6px 0.6px 0 rgba(0,0,0,0.9), 0.6px 0.6px 0 rgba(0,0,0,0.9);"
