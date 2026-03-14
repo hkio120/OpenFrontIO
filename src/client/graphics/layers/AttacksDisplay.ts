@@ -604,23 +604,22 @@ export class AttacksDisplay extends LitElement implements Layer {
 
         return html`
           <button
-            class="fixed z-[76] pointer-events-auto select-none inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md border disabled:opacity-45 disabled:cursor-default"
+            class="fixed z-[76] pointer-events-auto select-none inline-flex items-center gap-0.5 p-0.5 disabled:opacity-45 disabled:cursor-default"
             style="left:${screen.x.toFixed(2)}px; top:${screen.y.toFixed(
               2,
-            )}px; transform: translate(-50%, -50%); border-color: ${markerColor}; box-shadow: 0 1px 4px rgba(0,0,0,0.35); background: rgba(15,23,42,0.7);"
+            )}px; transform: translate(-50%, -50%); background: transparent; border: none;"
             translate="no"
             @click=${() => this.emitCancelAttackIntent(attack.id)}
             ?disabled=${attack.retreating}
             title="Cancel attack"
           >
-            <img
-              src="${soldierIcon}"
-              class="h-3 w-3"
-              style="filter: brightness(0) invert(1);"
-            />
             <span
-              class="text-[10px] font-black leading-none"
-              style="color: ${markerColor};"
+              class="inline-block h-4 w-4 lg:h-5 lg:w-5"
+              style="background: ${markerColor}; -webkit-mask: url('${soldierIcon}') center/contain no-repeat; mask: url('${soldierIcon}') center/contain no-repeat; filter: drop-shadow(-0.6px -0.6px 0 rgba(0,0,0,0.85)) drop-shadow(0.6px -0.6px 0 rgba(0,0,0,0.85)) drop-shadow(-0.6px 0.6px 0 rgba(0,0,0,0.85)) drop-shadow(0.6px 0.6px 0 rgba(0,0,0,0.85));"
+            ></span>
+            <span
+              class="text-[11px] lg:text-[12px] font-black leading-none"
+              style="color: #ef4444; text-shadow: -0.6px -0.6px 0 rgba(0,0,0,0.9), 0.6px -0.6px 0 rgba(0,0,0,0.9), -0.6px 0.6px 0 rgba(0,0,0,0.9), 0.6px 0.6px 0 rgba(0,0,0,0.9);"
               >↩</span
             >
           </button>
