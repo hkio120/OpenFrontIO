@@ -45,8 +45,14 @@ export class AttacksDisplay extends LitElement implements Layer {
   @state()
   private outgoingAttackAnchors: Map<string, { x: number; y: number } | null> =
     new Map();
+  @state()
+  private outgoingAttackCancelAnchors: Map<
+    string,
+    { x: number; y: number } | null
+  > = new Map();
   private outgoingAttackAngles: Map<string, number> = new Map();
   private pendingOutgoingAnchorLookups: Set<string> = new Set();
+  private outgoingAttackAnchorRefreshTick: Map<string, number> = new Map();
 
   createRenderRoot() {
     return this;
@@ -129,15 +135,22 @@ export class AttacksDisplay extends LitElement implements Layer {
 
   private refreshOutgoingAttackAnchors(attacks: AttackUpdate[]) {
     const activeIds = new Set(attacks.map((a) => a.id));
+    const currentTick = this.game.ticks();
 
     for (const id of Array.from(this.outgoingAttackAnchors.keys())) {
       if (!activeIds.has(id)) this.outgoingAttackAnchors.delete(id);
+    }
+    for (const id of Array.from(this.outgoingAttackCancelAnchors.keys())) {
+      if (!activeIds.has(id)) this.outgoingAttackCancelAnchors.delete(id);
     }
     for (const id of Array.from(this.pendingOutgoingAnchorLookups)) {
       if (!activeIds.has(id)) this.pendingOutgoingAnchorLookups.delete(id);
     }
     for (const id of Array.from(this.outgoingAttackAngles.keys())) {
       if (!activeIds.has(id)) this.outgoingAttackAngles.delete(id);
+    }
+    for (const id of Array.from(this.outgoingAttackAnchorRefreshTick.keys())) {
+      if (!activeIds.has(id)) this.outgoingAttackAnchorRefreshTick.delete(id);
     }
 
     for (const attack of attacks) {
@@ -147,12 +160,15 @@ export class AttacksDisplay extends LitElement implements Layer {
           this.getOutgoingAttackMarkerAngle(attack),
         );
       }
-      if (
-        this.outgoingAttackAnchors.has(attack.id) ||
-        this.pendingOutgoingAnchorLookups.has(attack.id)
-      ) {
-        continue;
-      }
+      if (this.pendingOutgoingAnchorLookups.has(attack.id)) continue;
+
+      const hasAnchor = this.outgoingAttackAnchors.has(attack.id);
+      const lastRefreshTick =
+        this.outgoingAttackAnchorRefreshTick.get(attack.id) ?? -Infinity;
+      const shouldRefresh = !hasAnchor || currentTick - lastRefreshTick >= 3;
+      if (!shouldRefresh) continue;
+
+      this.outgoingAttackAnchorRefreshTick.set(attack.id, currentTick);
       this.resolveOutgoingAttackAnchor(attack);
     }
   }
@@ -174,13 +190,32 @@ export class AttacksDisplay extends LitElement implements Layer {
       if (averagePosition === null) {
         this.outgoingAttackAnchors.set(attack.id, null);
       } else {
-        this.outgoingAttackAnchors.set(attack.id, {
-          x: averagePosition.x,
-          y: averagePosition.y,
-        });
+        const prevAnchor = this.outgoingAttackAnchors.get(attack.id);
+        const nextAnchor =
+          prevAnchor === null || prevAnchor === undefined
+            ? {
+                x: averagePosition.x,
+                y: averagePosition.y,
+              }
+            : {
+                // Smooth follow: keeps border tracking readable during fast movement.
+                x: prevAnchor.x * 0.68 + averagePosition.x * 0.32,
+                y: prevAnchor.y * 0.68 + averagePosition.y * 0.32,
+              };
+        this.outgoingAttackAnchors.set(attack.id, nextAnchor);
+
+        if (!this.outgoingAttackCancelAnchors.has(attack.id)) {
+          this.outgoingAttackCancelAnchors.set(attack.id, {
+            x: averagePosition.x,
+            y: averagePosition.y,
+          });
+        }
       }
     } catch {
       this.outgoingAttackAnchors.set(attack.id, null);
+      if (!this.outgoingAttackCancelAnchors.has(attack.id)) {
+        this.outgoingAttackCancelAnchors.set(attack.id, null);
+      }
     } finally {
       this.pendingOutgoingAnchorLookups.delete(attack.id);
       this.requestUpdate();
@@ -499,6 +534,12 @@ export class AttacksDisplay extends LitElement implements Layer {
     return this.outgoingAttackAnchors.get(attack.id) ?? null;
   }
 
+  private getOutgoingAttackCancelAnchor(
+    attack: AttackUpdate,
+  ): { x: number; y: number } | null {
+    return this.outgoingAttackCancelAnchors.get(attack.id) ?? null;
+  }
+
   private getOutgoingAttackMarkerAngle(attack: AttackUpdate): number {
     const me = this.game.myPlayer();
     const target = this.game.playerBySmallID(attack.targetID) as
@@ -524,7 +565,7 @@ export class AttacksDisplay extends LitElement implements Layer {
     const myTerritoryColor =
       this.game.myPlayer()?.territoryColor().toHex() ?? "#7dd3fc";
 
-    const markers = this.outgoingAttacks
+    const labelMarkers = this.outgoingAttacks
       .map((attack) => {
         const anchor = this.getOutgoingAttackAnchor(attack);
         if (!anchor) return null;
@@ -537,22 +578,57 @@ export class AttacksDisplay extends LitElement implements Layer {
         const markerColor = attack.retreating ? "#9ca3af" : myTerritoryColor;
 
         return html`
-          <button
-            class="fixed z-[75] pointer-events-auto select-none tabular-nums leading-none font-extrabold italic text-[14px] lg:text-[16px] disabled:opacity-45 disabled:cursor-default"
+          <div
+            class="fixed z-[75] pointer-events-none select-none tabular-nums leading-none font-extrabold italic text-[14px] lg:text-[16px] opacity-95"
             style="left:${screen.x.toFixed(2)}px; top:${screen.y.toFixed(
               2,
             )}px; transform: translate(-50%, -48%) rotate(${angle}deg); color: ${markerColor}; opacity: 0.92; -webkit-text-stroke: 0.55px rgba(0,0,0,0.82); text-shadow: -0.7px -0.7px 0 rgba(0,0,0,0.7), 0.7px -0.7px 0 rgba(0,0,0,0.7), -0.7px 0.7px 0 rgba(0,0,0,0.7), 0.7px 0.7px 0 rgba(0,0,0,0.7), 0 1px 3px rgba(0,0,0,0.35);"
             translate="no"
-            @click=${() => this.emitCancelAttackIntent(attack.id)}
-            ?disabled=${attack.retreating}
           >
             ${renderTroops(attack.troops)}
+          </div>
+        `;
+      })
+      .filter((x) => x !== null);
+
+    const cancelMarkers = this.outgoingAttacks
+      .map((attack) => {
+        const cancelAnchor = this.getOutgoingAttackCancelAnchor(attack);
+        if (!cancelAnchor) return null;
+
+        const worldCell = new Cell(cancelAnchor.x, cancelAnchor.y);
+        if (!this.transform!.isOnScreen(worldCell)) return null;
+        const screen = this.transform!.worldToScreenCoordinates(worldCell);
+
+        const markerColor = attack.retreating ? "#9ca3af" : myTerritoryColor;
+
+        return html`
+          <button
+            class="fixed z-[76] pointer-events-auto select-none inline-flex items-center gap-0.5 px-1 py-0.5 rounded-md border disabled:opacity-45 disabled:cursor-default"
+            style="left:${screen.x.toFixed(2)}px; top:${screen.y.toFixed(
+              2,
+            )}px; transform: translate(-50%, -50%); border-color: ${markerColor}; box-shadow: 0 1px 4px rgba(0,0,0,0.35); background: rgba(15,23,42,0.7);"
+            translate="no"
+            @click=${() => this.emitCancelAttackIntent(attack.id)}
+            ?disabled=${attack.retreating}
+            title="Cancel attack"
+          >
+            <img
+              src="${soldierIcon}"
+              class="h-3 w-3"
+              style="filter: brightness(0) invert(1);"
+            />
+            <span
+              class="text-[10px] font-black leading-none"
+              style="color: ${markerColor};"
+              >↩</span
+            >
           </button>
         `;
       })
       .filter((x) => x !== null);
 
-    return html`${markers}`;
+    return html`${labelMarkers}${cancelMarkers}`;
   }
 
   render() {
