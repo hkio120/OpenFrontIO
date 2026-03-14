@@ -53,6 +53,10 @@ export class AttacksDisplay extends LitElement implements Layer {
   private outgoingAttackAngles: Map<string, number> = new Map();
   private pendingOutgoingAnchorLookups: Set<string> = new Set();
   private outgoingAttackAnchorRefreshTick: Map<string, number> = new Map();
+  private outgoingAttackRawAnchors: Map<string, { x: number; y: number }> =
+    new Map();
+  private outgoingAttackJitterScore: Map<string, number> = new Map();
+  private outgoingAttackCenterMode: Map<string, boolean> = new Map();
 
   createRenderRoot() {
     return this;
@@ -152,6 +156,15 @@ export class AttacksDisplay extends LitElement implements Layer {
     for (const id of Array.from(this.outgoingAttackAnchorRefreshTick.keys())) {
       if (!activeIds.has(id)) this.outgoingAttackAnchorRefreshTick.delete(id);
     }
+    for (const id of Array.from(this.outgoingAttackRawAnchors.keys())) {
+      if (!activeIds.has(id)) this.outgoingAttackRawAnchors.delete(id);
+    }
+    for (const id of Array.from(this.outgoingAttackJitterScore.keys())) {
+      if (!activeIds.has(id)) this.outgoingAttackJitterScore.delete(id);
+    }
+    for (const id of Array.from(this.outgoingAttackCenterMode.keys())) {
+      if (!activeIds.has(id)) this.outgoingAttackCenterMode.delete(id);
+    }
 
     for (const attack of attacks) {
       if (!this.outgoingAttackAngles.has(attack.id)) {
@@ -190,19 +203,45 @@ export class AttacksDisplay extends LitElement implements Layer {
       if (averagePosition === null) {
         this.outgoingAttackAnchors.set(attack.id, null);
       } else {
-        const prevAnchor = this.outgoingAttackAnchors.get(attack.id);
-        const nextAnchor =
-          prevAnchor === null || prevAnchor === undefined
-            ? {
-                x: averagePosition.x,
-                y: averagePosition.y,
-              }
-            : {
-                // Smooth follow: keeps border tracking readable during fast movement.
-                x: prevAnchor.x * 0.68 + averagePosition.x * 0.32,
-                y: prevAnchor.y * 0.68 + averagePosition.y * 0.32,
-              };
-        this.outgoingAttackAnchors.set(attack.id, nextAnchor);
+        const raw = { x: averagePosition.x, y: averagePosition.y };
+        const prevRaw = this.outgoingAttackRawAnchors.get(attack.id);
+        this.outgoingAttackRawAnchors.set(attack.id, raw);
+
+        const delta =
+          prevRaw === undefined
+            ? 0
+            : Math.hypot(raw.x - prevRaw.x, raw.y - prevRaw.y);
+        const prevJitter = this.outgoingAttackJitterScore.get(attack.id) ?? 0;
+        const jitter = prevJitter * 0.82 + delta * 0.18;
+        this.outgoingAttackJitterScore.set(attack.id, jitter);
+
+        const target = this.game.playerBySmallID(attack.targetID);
+        const targetView =
+          target instanceof PlayerView ? (target as PlayerView) : undefined;
+        const largeTarget = (targetView?.numTilesOwned() ?? 0) >= 150_000;
+
+        let centerMode = this.outgoingAttackCenterMode.get(attack.id) ?? false;
+        if (largeTarget || jitter > 9.5) centerMode = true;
+        else if (!largeTarget && jitter < 4.0) centerMode = false;
+        this.outgoingAttackCenterMode.set(attack.id, centerMode);
+
+        if (centerMode && targetView?.nameLocation()) {
+          this.outgoingAttackAnchors.set(attack.id, {
+            x: targetView.nameLocation().x,
+            y: targetView.nameLocation().y,
+          });
+        } else {
+          const prevAnchor = this.outgoingAttackAnchors.get(attack.id);
+          const nextAnchor =
+            prevAnchor === null || prevAnchor === undefined
+              ? raw
+              : {
+                  // Smooth follow: keeps border tracking readable during fast movement.
+                  x: prevAnchor.x * 0.68 + raw.x * 0.32,
+                  y: prevAnchor.y * 0.68 + raw.y * 0.32,
+                };
+          this.outgoingAttackAnchors.set(attack.id, nextAnchor);
+        }
 
         if (!this.outgoingAttackCancelAnchors.has(attack.id)) {
           this.outgoingAttackCancelAnchors.set(attack.id, {
@@ -574,8 +613,29 @@ export class AttacksDisplay extends LitElement implements Layer {
         if (!this.transform!.isOnScreen(worldCell)) return null;
         const screen = this.transform!.worldToScreenCoordinates(worldCell);
 
-        const angle = this.outgoingAttackAngles.get(attack.id) ?? -18;
+        const centerMode = this.outgoingAttackCenterMode.get(attack.id) ?? false;
+        const angle = centerMode
+          ? 0
+          : this.outgoingAttackAngles.get(attack.id) ?? -18;
         const markerColor = attack.retreating ? "#9ca3af" : myTerritoryColor;
+
+        if (centerMode) {
+          return html`
+            <div
+              class="fixed z-[75] pointer-events-none select-none tabular-nums leading-none font-extrabold text-[14px] lg:text-[16px]"
+              style="left:${screen.x.toFixed(2)}px; top:${screen.y.toFixed(
+                2,
+              )}px; transform: translate(-50%, -50%); color: ${markerColor};"
+              translate="no"
+            >
+              <span
+                class="inline-flex items-center justify-center rounded-full px-2 py-1 min-w-[3.25rem]"
+                style="background: rgba(15,23,42,0.62); border: 1px solid ${markerColor}; -webkit-text-stroke: 0.45px rgba(0,0,0,0.85); text-shadow: -0.6px -0.6px 0 rgba(0,0,0,0.7), 0.6px -0.6px 0 rgba(0,0,0,0.7), -0.6px 0.6px 0 rgba(0,0,0,0.7), 0.6px 0.6px 0 rgba(0,0,0,0.7);"
+                >${renderTroops(attack.troops)}</span
+              >
+            </div>
+          `;
+        }
 
         return html`
           <div
